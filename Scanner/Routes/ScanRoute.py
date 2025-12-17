@@ -1,0 +1,193 @@
+"""
+Flask REST API for GitHub Scanner
+
+This module provides a REST API interface for the GitHub Scanner,
+allowing UI applications to request repository analysis and receive
+improvement suggestions via HTTP endpoints.
+
+Endpoints:
+    POST /api/scan - Analyze a repository and get suggestions
+    GET  /api/health - Health check
+"""
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+from Scanner.Utility.Helpers import Helpers
+from Scanner.Exception.GitHubError import GitHubError
+from Scanner.Business.ScanBusiness import ScanBusiness
+
+import logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+"""Create and configure the Flask application.    
+    Args:
+        config: Optional configuration dictionary        
+    Returns:
+        Flask application instance
+"""
+def CreateApp(config=None):
+    
+    app = Flask(__name__)    
+    # Load environment variables from .env
+    Helpers.LoadEnvFile()    
+    # Enable CORS for all routes
+    CORS(app)
+    # Register blueprints and routes
+    RegisterRoutes(app)    
+    return app
+
+"""Register all API routes.    
+    Args:
+        app: Flask application instance
+"""
+def RegisterRoutes(app: Flask) -> None:    
+    
+    @app.route("/")
+    def index():
+        return "App is running!"
+
+    """Health check endpoint.        
+        Returns:
+            JSON response with status
+    """
+    @app.route('/api/health-check', methods=['GET'])
+    def HealthCheck():        
+        return jsonify({
+            "status": "healthy",
+            "message": "GitHub Scanner API is running"
+        }), 200
+    
+    """Scan a repository and get improvement suggestions.        
+        Request JSON body:
+        {
+            "target": "owner/repo",           # Required
+            "max_results": 6,                 # Optional, default 6
+            "search_type": false,                  # Optional, default false
+            "openai_key": "sk_...",           # Optional
+            "github_token": "ghp_...",        # Optional
+        }        
+        Returns:
+            JSON response with suggestions or error
+    """
+    @app.route('/api/scan-repos', methods=['POST'])
+    def ScanRepositoryEndpoint():        
+        try:
+            # Parse request data
+            data = request.get_json() or {}            
+            # Validate required fields
+            target = data.get('target')
+            if not target:
+                return jsonify({
+                    "error": "missing_field",
+                    "message": "Field 'target' is required",
+                    "field": "target"
+                }), 400
+            
+            # Extract optional parameters
+            max_results = data.get('max_results', 4)
+            search_type = data.get('suggestion_by', 1) # GitHub Suggestions : 1, GitHub + AI Suggestions : 2, AI Suggestions : 3, Manual : 4
+            ai_key = data.get('ai_key')
+            github_token = data.get('github_token')
+            
+            # Validate max_results
+            if not isinstance(max_results, int) or max_results < 1 or max_results > 100:
+                return jsonify({
+                    "error": "invalid_parameter",
+                    "message": "max_results must be integer between 1 and 100",
+                    "parameter": "max_results"
+                }), 400
+            
+            # Run the scan
+            logger.info(f"Scanning repository: {target}")
+            result = ScanBusiness(github_token).ScanRepository(
+                target,
+                max_results=max_results,
+                search_type=search_type,
+                ai_key=ai_key
+            )
+            logger.info(f"Scan completed for repository: {target}")
+            # Extract suggestions from result
+            suggestions = result.get("suggestions", {})#.get("suggestions", [])
+            
+            # Return success response
+            return jsonify({
+                "success": True,
+                "target": target,
+                "suggestions": [
+                    {
+                        "title": s.get("title"),
+                        "details": s.get("details"),
+                        "priority": s.get("priority", "medium"),
+                        "source": s.get("source", "rule")
+                    }
+                    for s in suggestions
+                ],
+            }), 200
+        
+        except GitHubError as e:
+            logger.error(f"GitHub API error: {e.message}")
+            error_code = e.status_code
+            if e.status_code == 401:
+                return jsonify({
+                    "error": "unauthorized",
+                    "message": "Invalid GitHub token"
+                }), 401
+            elif e.status_code == 429:
+                return jsonify({
+                    "error": "rate_limit",
+                    "message": "GitHub API rate limit exceeded"
+                }), 429
+            elif e.status_code == 404:
+                return jsonify({
+                    "error": "not_found",
+                    "message": f"Repository not found: {target}"
+                }), 404
+            else:
+                return jsonify({
+                    "error": "github_error",
+                    "message": e.message
+                }), error_code
+        
+        except ValueError as e:
+            logger.error(f"Validation error: {str(e)}")
+            return jsonify({
+                "error": "invalid_parameter",
+                "message": str(e)
+            }), 400
+        
+        except Exception as e:
+            logger.exception(f"Error scanning repository: {str(e)}")
+            return jsonify({
+                "error": "internal_error",
+                "message": f"Internal server error: {str(e)}"
+            }), 500
+    
+    """Handle 404 errors.
+        
+        Args:
+            error: The error object
+            
+        Returns:
+            JSON response with error
+    """
+    @app.errorhandler(404)
+    def NotFound(error):        
+        return jsonify({
+            "error": "not_found",
+            "message": "Endpoint not found. Try GET /api/health or POST /api/scan"
+        }), 404
+    
+    """Handle 405 errors.        
+        Args:
+            error: The error object            
+        Returns:
+            JSON response with error
+    """
+    @app.errorhandler(405)
+    def MethodNotAllowed(error):        
+        return jsonify({
+            "error": "method_not_allowed",
+            "message": "Method not allowed for this endpoint"
+        }), 405
