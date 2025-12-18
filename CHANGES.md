@@ -14,3 +14,7 @@ Next steps:
 - Add integration tests for end-to-end scanning flow.
 - Install and run tests (`pip install -r requirements.txt` then `pytest`).
 - Consider further splitting and adding type annotations and docstrings where helpful.
+
+Other updates:
+- Added `.github/TOPICS.md` with recommended repository topics and a `scripts/set_topics.py` utility to apply topics via the GitHub API.
+- Added a GitHub Action workflow `.github/workflows/set-topics.yml` to apply topics automatically on push or via workflow dispatch.
