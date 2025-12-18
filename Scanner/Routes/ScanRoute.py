@@ -13,9 +13,11 @@ Endpoints:
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from Scanner.Utility.Helpers import Helpers
+from Scanner.Utility.env import load_env_file
+from Scanner.Utility.auth import get_github_token
 from Scanner.Exception.GitHubError import GitHubError
 from Scanner.Business.ScanBusiness import ScanBusiness
+from Scanner.Routes.validators import validate_scan_payload, map_suggestions
 
 import logging
 logger = logging.getLogger(__name__)
@@ -31,7 +33,7 @@ def CreateApp(config=None):
     
     app = Flask(__name__)    
     # Load environment variables from .env
-    Helpers.LoadEnvFile()    
+    load_env_file()
     # Enable CORS for all routes
     CORS(app)
     # Register blueprints and routes
@@ -75,30 +77,12 @@ def RegisterRoutes(app: Flask) -> None:
     def ScanRepositoryEndpoint():        
         try:
             # Parse request data
-            data = request.get_json() or {}            
-            # Validate required fields
-            target = data.get('target')
-            if not target:
-                return jsonify({
-                    "error": "missing_field",
-                    "message": "Field 'target' is required",
-                    "field": "target"
-                }), 400
-            
-            # Extract optional parameters
-            max_results = data.get('max_results', 4)
-            search_type = data.get('suggestion_by', 1) # GitHub Suggestions : 1, GitHub + AI Suggestions : 2, AI Suggestions : 3, Manual : 4
-            ai_key = data.get('ai_key')
-            github_token = data.get('github_token')
-            
-            # Validate max_results
-            if not isinstance(max_results, int) or max_results < 1 or max_results > 100:
-                return jsonify({
-                    "error": "invalid_parameter",
-                    "message": "max_results must be integer between 1 and 100",
-                    "parameter": "max_results"
-                }), 400
-            
+            data = request.get_json() or {}
+            try:
+                target, max_results, search_type, ai_key, github_token = validate_scan_payload(data)
+            except ValueError as e:
+                return jsonify({"error": "invalid_parameter", "message": str(e)}), 400
+
             # Run the scan
             logger.info(f"Scanning repository: {target}")
             result = ScanBusiness(github_token).ScanRepository(
@@ -108,22 +92,12 @@ def RegisterRoutes(app: Flask) -> None:
                 ai_key=ai_key
             )
             logger.info(f"Scan completed for repository: {target}")
-            # Extract suggestions from result
-            suggestions = result.get("suggestions", {})#.get("suggestions", [])
-            
-            # Return success response
+            suggestions = result.get("suggestions", [])
+
             return jsonify({
                 "success": True,
                 "target": target,
-                "suggestions": [
-                    {
-                        "title": s.get("title"),
-                        "details": s.get("details"),
-                        "priority": s.get("priority", "medium"),
-                        "source": s.get("source", "rule")
-                    }
-                    for s in suggestions
-                ],
+                "suggestions": map_suggestions(suggestions),
             }), 200
         
         except GitHubError as e:

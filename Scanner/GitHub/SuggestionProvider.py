@@ -30,7 +30,7 @@ class SuggestionProvider:
             else:
                 return ManualSuggestion()
         except Exception as e:
-            logger.warning(f"Failed to initialize OpenAI provider: {e}. Using Mock provider.")
+            logger.warning(f"Failed to initialize AI provider: {e}. Using Mock provider.")
 
 
 

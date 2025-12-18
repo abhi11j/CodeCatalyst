@@ -1,7 +1,5 @@
 
-from typing import Any
-from altair import Dict
-from typing import Dict
+from typing import Any, Dict
 
 
 DEFAULT_COMPARISON_RULES: Dict[str, Dict[str, Any]] = {

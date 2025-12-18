@@ -74,7 +74,7 @@ class AutomatedSuggestion(ISearchProvider):
             if not target_has and ratio >= threshold:
                 suggestions.append({
                     "title": f"Add {key.upper()}",  # Use uppercase for consistency
-                    "details": rule["add_msg"],
+                    "detail": rule["add_msg"],
                     "priority": "high" if ratio > 0.8 else "medium" if ratio > 0.4 else "low",
                     "source": "Automation Rules"
                 })

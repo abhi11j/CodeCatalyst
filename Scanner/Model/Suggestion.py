@@ -4,6 +4,6 @@ from dataclasses import dataclass
 @dataclass
 class Suggestion:    
     title: str
-    details: str
+    detail: str
     priority: str = "medium"
     source: str = "rules"
