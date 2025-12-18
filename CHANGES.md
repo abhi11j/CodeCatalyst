@@ -15,6 +15,11 @@ Next steps:
 - Install and run tests (`pip install -r requirements.txt` then `pytest`).
 - Consider further splitting and adding type annotations and docstrings where helpful.
 
+Patterns implemented:
+- Added a thread-safe `Singleton` metaclass in `Scanner/Utils/singleton.py` and applied it to `Scanner/GitHub/GitHubClient.py` to centralize session reuse.
+- Added `ProviderFactory` in `Scanner/GitHub/ProviderFactory.py` and updated `SuggestionProvider` to use the Factory pattern for provider creation.
+- Added an `EventDispatcher` in `Scanner/Events/event_dispatcher.py` (Observer pattern) and wired `ScanBusiness` to emit `scan_started` and `scan_completed` events.
+
 Other updates:
 - Added `.github/TOPICS.md` with recommended repository topics and a `scripts/set_topics.py` utility to apply topics via the GitHub API.
 - Added a GitHub Action workflow `.github/workflows/set-topics.yml` to apply topics automatically on push or via workflow dispatch.

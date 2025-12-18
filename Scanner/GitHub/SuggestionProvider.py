@@ -1,36 +1,40 @@
 """AI provider abstraction and implementations for suggestion generation.
 This module provides a pluggable interface for using LLMs or mock providers to generate
-repository improvement suggestions. The OpenAI-compatible provider uses the HTTP API
-to call chat completions and returns a JSON-like structure.
+repository improvement suggestions.
 """
 
 from __future__ import annotations
+from typing import Optional
 from Scanner.GitHub.Implementation.AISuggestion import AISuggestion
 from Scanner.GitHub.Implementation.ManualSuggestion import ManualSuggestion
 from Scanner.GitHub.Implementation.AutomatedSuggestion import AutomatedSuggestion
 from Scanner.GitHub.Interface import ISearchProvider
+from Scanner.GitHub.ProviderFactory import ProviderFactory
 
 import logging
 logger = logging.getLogger(__name__)
 
+# Register built-in providers
+ProviderFactory.register("automated", lambda: AutomatedSuggestion())
+ProviderFactory.register("ai", lambda api_key=None: AISuggestion(api_key=api_key))
+ProviderFactory.register("manual", lambda: ManualSuggestion())
+
 class SuggestionProvider:
-            
-    """Initialize and return appropriate AI provider.    
-        Args:
-            openai_key: Optional OpenAI API key        
-        Returns:
-            AIProvider instance (OpenAI or Mock)
+    """Facade that uses `ProviderFactory` to create suggestion providers by type.
+    This makes it easy to register new providers and test them.
     """
-    def InitializeProvider(search_type: int = 1, ai_key: str = None) -> ISearchProvider:    
+
+    @staticmethod
+    def InitializeProvider(search_type: int = 1, ai_key: Optional[str] = None) -> ISearchProvider:
+        mapping = {1: "automated", 2: "ai", 3: "ai", 4: "manual"}
+        key = mapping.get(search_type, "automated")
         try:
-            if search_type == 1:
-                return AutomatedSuggestion()
-            elif search_type == 2 or search_type == 3:
-                return AISuggestion(api_key=ai_key)
-            else:
-                return ManualSuggestion()
-        except Exception as e:
-            logger.warning(f"Failed to initialize AI provider: {e}. Using Mock provider.")
+            if key == "ai":
+                return ProviderFactory.create(key, ai_key)
+            return ProviderFactory.create(key)
+        except KeyError as e:
+            logger.warning("Provider not found: %s, falling back to automated", e)
+            return ProviderFactory.create("automated")
 
 
 

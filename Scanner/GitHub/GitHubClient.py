@@ -6,8 +6,12 @@ import os
 import requests
 from Scanner.Exception.GitHubError import GitHubError
 
-class GitHubClient:
+from Scanner.Utils.singleton import Singleton
+
+class GitHubClient(metaclass=Singleton):
+    """Singleton GitHub client to reuse session and headers across the application."""
     def __init__(self, token: Optional[str] = None, session: Optional[requests.Session] = None):
+        # Note: using a singleton ensures only one session is created application-wide
         self.session = session or requests.Session()
         token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
         if token:

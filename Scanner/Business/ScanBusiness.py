@@ -14,12 +14,18 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+from Scanner.Events.event_dispatcher import EventDispatcher
+
 class ScanBusiness:
 
-    """High-level orchestrator that uses smaller, focused components to scan repos."""
-    def __init__(self, token: Optional[str] = None):
+    """High-level orchestrator that uses smaller, focused components to scan repos.
+    Emits events via `EventDispatcher` (scan_started, scan_completed).
+    """
+    def __init__(self, token: Optional[str] = None, dispatcher: EventDispatcher = None):
         token = token or get_github_token()
         self.client = GitHubClient(token=token)
+        # Use provided dispatcher or create a local one (callers can subscribe)
+        self.dispatcher = dispatcher or EventDispatcher()
 
     def ScanRepository(self, target: str, max_results: int = 6, search_type: int = 1, ai_key: Optional[str] = None) -> Dict[str, Any]:
         if not target:
@@ -28,6 +34,12 @@ class ScanBusiness:
             raise ValueError("max_results must be between 1 and 100")
 
         repos_context: Dict[str, Any] = {}
+
+        # Emit scan_started event
+        try:
+            self.dispatcher.dispatch("scan_started", target=target)
+        except Exception:
+            pass
 
         if search_type != 3:
             # Analyze the target repository
@@ -49,6 +61,12 @@ class ScanBusiness:
         target_url = f"{os.environ.get('GITHUB_API_ROOT')}/repos/{target}"
         provider = SuggestionProvider.InitializeProvider(search_type, ai_key)
         suggestions = provider.GenerateSuggestions(repos_context, target_url, search_type == 3)
+
+        # Emit scan_completed event with result
+        try:
+            self.dispatcher.dispatch("scan_completed", target=target, suggestions=suggestions)
+        except Exception:
+            pass
 
         logger.info("suggestions: %s", suggestions)
 
