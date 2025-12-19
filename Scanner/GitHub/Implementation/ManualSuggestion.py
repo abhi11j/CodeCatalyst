@@ -28,12 +28,3 @@ class ManualSuggestion(ISearchProvider):
             item.update(source="Manual")
 
         return suggestions
-        # {
-        #     # "stats": 0,  # Mock does not provide stats
-        #     "suggestions": suggestions,
-        #     # "metadata": {
-        #     #     "target": target.name,
-        #     #     "repos_analyzed": len(others),
-        #     #     "comparison_fields": 0
-        #     # }
-        # }

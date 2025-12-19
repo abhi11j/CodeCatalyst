@@ -24,16 +24,7 @@ class AutomatedSuggestion(ISearchProvider):
         stats = self.CalculateStats(others, self.rules)
         suggestions = self.GetSuggestions(target, stats)
         
-        return suggestions
-        # {
-        #     # "stats": stats,
-        #     "suggestions": suggestions,
-        #     # "metadata": {
-        #     #     "target": target.name,
-        #     #     "repos_analyzed": len(others),
-        #     #     "comparison_fields": list(self.rules.keys())
-        #     # }
-        # }
+        return suggestions       
     
     """Calculate comparison statistics based on provided rules."""
     def CalculateStats(self, repos_features: List[RepoFeatures], rules: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
