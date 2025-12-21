@@ -4,6 +4,7 @@ Summary:
 - Extracted `Scanner.GitHub.GitHubClient` to centralize GitHub HTTP calls and error handling (replaces ad-hoc requests usage in `ScanBusiness`).
 - Added `Scanner.Business.RepoAnalyzer` to convert GitHub API responses into `RepoFeatures` and encapsulate repo checks.
 - Split AI responsibilities into `Scanner.GitHub.AI.ai_client`, `prompt_builder`, and `response_parser` for clearer separation of concerns.
+- Add validation and safety checks for AI-generated code changes (limit content size, disallow path traversal and protected paths, enforce actions and change count limits).
 - Split `Scanner.Utility.Helpers` into focused modules: `env`, `url`, and `auth`. Kept a thin `Helpers` wrapper for backward compatibility.
 - Added route validators in `Scanner.Routes.validators` and simplified `ScanRoute`.
 - Fixed type imports in `RuleConfiguration.py`.

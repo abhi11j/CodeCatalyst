@@ -19,6 +19,7 @@ def map_suggestions(suggestions):
         {
             "title": s.get("title"),
             "detail": s.get("detail"),
+            "ai_instruction": s.get("ai_instruction"),
             "priority": s.get("priority", "medium"),
             "source": s.get("source", "rule")
         }

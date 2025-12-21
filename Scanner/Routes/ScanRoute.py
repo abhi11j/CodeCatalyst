@@ -10,6 +10,7 @@ Endpoints:
     GET  /api/health - Health check
 """
 
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -137,6 +138,54 @@ def RegisterRoutes(app: Flask) -> None:
                 "error": "internal_error",
                 "message": f"Internal server error: {str(e)}"
             }), 500
+
+    """Apply provided suggestions in a new branch and open a PR.
+        Expected JSON body:
+        {
+            "target": "owner/repo",
+            # "search_type": 3,              # required to indicate apply mode
+            "suggestions": [{"title":"Add CI","detail":"..."}, ...],
+            "branch": "optional-branch-name",
+            "github_token": "optional-token"  # optional fallback token
+        }
+    """
+    @app.route('/api/apply-suggestions', methods=['POST'])
+    def ApplySuggestionsEndpoint():
+       
+        try:
+            data = request.get_json() or {}
+            target = data.get("target")
+            # search_type = data.get("search_type")
+            suggestions = data.get("suggestions")
+            branch = data.get("branch")
+            token = data.get("github_token") or None
+            ai_key = data.get("ai_key") or None
+
+            if not target:
+                return jsonify({"error": "invalid_parameter", "message": "Field 'target' is required"}), 400
+            # if search_type != 3:
+            #     return jsonify({"error": "invalid_parameter", "message": "This endpoint requires search_type = 3"}), 400
+            if not isinstance(suggestions, list) or not suggestions:
+                return jsonify({"error": "invalid_parameter", "message": "Field 'suggestions' must be a non-empty list"}), 400
+
+            # If any suggestion contains an ai_instruction, ensure an ai_key was provided
+            if any(s.get("ai_instruction") for s in suggestions) and not ai_key:
+                return jsonify({"error": "invalid_parameter", "message": "Field 'ai_key' is required when suggestions include 'ai_instruction'"}), 400
+
+            # Perform apply -> uses local git and may push and create PR
+            from Scanner.Utility.apply_suggestions import apply_suggestions_to_branch
+
+            result = apply_suggestions_to_branch(suggestions, branch_name=branch, github_token=token, ai_key=ai_key, repo_dir=os.getcwd())
+
+            # If validation error occurred while applying AI instructions, return 400 with details
+            if isinstance(result, dict) and result.get("message") == "validation_error":
+                return jsonify({"success": False, "target": target, "result": result}), 400
+
+            return jsonify({"success": True, "target": target, "result": result}), 200
+
+        except Exception as e:
+            logger.exception("Error applying suggestions: %s", e)
+            return jsonify({"error": "internal_error", "message": str(e)}), 500
     
     """Handle 404 errors.
         

@@ -22,3 +22,11 @@ def test_map_suggestions():
     mapped = map_suggestions(suggestions)
     assert mapped[0]["title"] == "A"
     assert mapped[0]["detail"] == "B"
+    # ai_instruction should be present (None if not provided)
+    assert "ai_instruction" in mapped[0] and mapped[0]["ai_instruction"] is None
+
+
+def test_map_suggestions_with_ai_instruction():
+    suggestions = [{"title": "AI", "detail": "do it", "ai_instruction": "perform ai task"}]
+    mapped = map_suggestions(suggestions)
+    assert mapped[0]["ai_instruction"] == "perform ai task"
