@@ -12,6 +12,8 @@ import os
 import subprocess
 import time
 import json
+import tempfile
+import shutil
 from typing import Dict, Any, List, Optional
 
 # Lazy import of AI client to avoid hard dependency if not used
@@ -195,21 +197,68 @@ def _apply_ai_instruction(suggestion: Dict[str, Any], repo_dir: Optional[str] = 
 """Apply suggestions in a new branch and create a PR.   
     Returns a dict with keys: branch, changed_files (list of titles), pr_url (optional), message
 """
-def apply_suggestions_to_branch(suggestions: List[Dict[str, Any]], branch_name: Optional[str] = None, github_token: Optional[str] = None, ai_key: Optional[str] = None, repo_dir: Optional[str] = None) -> Dict[str, Any]:
-   
+def apply_suggestions_to_branch(suggestions: List[Dict[str, Any]], branch_name: Optional[str] = None, github_token: Optional[str] = None, ai_key: Optional[str] = None, repo_dir: Optional[str] = None, target: Optional[str] = None, base_branch: str = "main") -> Dict[str, Any]:
+    """Apply suggestions to a repository branch.
+
+    If `target` (owner/repo or repo URL) is provided, this function will:
+      - clone the target repo into a temporary directory
+      - checkout `base_branch` from the remote
+      - create `branch_name` from `base_branch`
+      - apply changes and push the branch back to GitHub
+
+    Returns the same dict as before, but includes `repo_dir` (path used) to help callers/tests inspect the workspace.
+    """
+
+    tmp_dir = None
+    owner_repo = None
+
+    # If a remote target is provided, clone it into a temporary directory
+    if target:
+        tmp_dir = tempfile.mkdtemp(prefix="apply_suggestions_")
+        # normalize owner/repo or accept full URL
+        target_repo = target
+        if target_repo.startswith("https://") or target_repo.startswith("git@"):
+            repo_url = target_repo.rstrip(".git")
+            if repo_url.endswith("/"):
+                repo_url = repo_url[:-1]
+            repo_url = repo_url if repo_url.endswith(".git") else repo_url + ".git"
+            owner_repo = repo_url.split("github.com/")[-1].rstrip(".git")
+            repo_clone_url = repo_url
+        else:
+            owner_repo = target_repo
+            repo_clone_url = f"https://github.com/{owner_repo}.git"
+
+        if github_token:
+            repo_clone_url_auth = f"https://{github_token}@github.com/{owner_repo}.git"
+        else:
+            repo_clone_url_auth = repo_clone_url
+
+        try:
+            # Clone only the target base branch for efficiency
+            _run_git(["git", "clone", "--branch", base_branch, "--single-branch", "--depth", "1", repo_clone_url_auth, tmp_dir])
+        except Exception:
+            # Cleanup on failure
+            try:
+                shutil.rmtree(tmp_dir)
+            except Exception:
+                pass
+            raise
+        repo_dir = tmp_dir
+
     repo_dir = repo_dir or os.getcwd()
+
     # Make a safe branch name
     if not branch_name:
         branch_name = f"auto/apply-suggestions-{int(time.time())}"
 
-    # Fetch main and create branch from it
+    # Fetch base branch and create branch from it
     try:
-        _run_git(["git", "fetch", "origin", "main"], cwd=repo_dir)
+        _run_git(["git", "fetch", "origin", base_branch], cwd=repo_dir)
     except Exception:
         # Proceed even if fetch fails (local-only repo)
         pass
 
-    _run_git(["git", "checkout", "-B", branch_name, "main"], cwd=repo_dir)
+    _run_git(["git", "checkout", "-B", branch_name, base_branch], cwd=repo_dir)
 
     changed = []
     for s in suggestions:
@@ -237,40 +286,52 @@ def apply_suggestions_to_branch(suggestions: List[Dict[str, Any]], branch_name: 
     commit_msg = "Apply automated suggestions: " + ", ".join(changed)
     _run_git(["git", "commit", "-m", commit_msg], cwd=repo_dir)
 
-    # Push branch
+    # Push branch (attempt to set token-auth remote if target + token provided)
     try:
+        if target and github_token:
+            # Ensure remote uses token auth so push can succeed for private repos
+            auth_url = f"https://{github_token}@github.com/{owner_repo}.git"
+            try:
+                _run_git(["git", "remote", "set-url", "origin", auth_url], cwd=repo_dir)
+            except Exception:
+                # Not fatal
+                pass
         _run_git(["git", "push", "-u", "origin", branch_name], cwd=repo_dir)
     except Exception:
-        # Non-fatal; branch may be local
+        # Non-fatal; branch may be local or push failed
         pass
 
     pr_url = None
-    # Try gh CLI
+    # Try gh CLI (use base_branch for PR base)
     try:
-        subprocess.check_call(["gh", "pr", "create", "--title", "Apply automated code improvements", "--body", commit_msg, "--base", "main", "--head", branch_name], cwd=repo_dir)
+        subprocess.check_call(["gh", "pr", "create", "--title", "Apply automated code improvements", "--body", commit_msg, "--base", base_branch, "--head", branch_name], cwd=repo_dir)
         # If gh succeeded, it usually prints the url, but we can't capture it easily here
-        pr_url = f"https://github.com/<owner>/<repo>/pull/new/{branch_name}"
+        if owner_repo:
+            pr_url = f"https://github.com/{owner_repo}/pull/new/{branch_name}"
+        else:
+            pr_url = f"https://github.com/<owner>/<repo>/pull/new/{branch_name}"
     except Exception:
         # Try GitHub API with token
         token = github_token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
         if token:
             try:
                 import requests
-                # Determine owner/repo from git remote
-                try:
-                    remote = subprocess.check_output(["git", "remote", "get-url", "origin"], cwd=repo_dir, text=True).strip()
-                except Exception:
-                    remote = None
-                owner_repo = None
-                if remote:
-                    if remote.startswith("https://"):
-                        owner_repo = remote.rstrip(".git").split("github.com/")[-1]
-                    elif remote.startswith("git@"):
-                        owner_repo = remote.split(":", 1)[-1].rstrip(".git")
+                # Determine owner/repo from git remote if not known
+                if not owner_repo:
+                    try:
+                        remote = subprocess.check_output(["git", "remote", "get-url", "origin"], cwd=repo_dir, text=True).strip()
+                    except Exception:
+                        remote = None
+                    owner_repo = None
+                    if remote:
+                        if remote.startswith("https://"):
+                            owner_repo = remote.rstrip(".git").split("github.com/")[-1]
+                        elif remote.startswith("git@"):
+                            owner_repo = remote.split(":", 1)[-1].rstrip(".git")
                 if owner_repo:
                     api_url = f"https://api.github.com/repos/{owner_repo}/pulls"
                     headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
-                    payload = {"title": "Apply automated code improvements", "body": commit_msg, "head": branch_name, "base": "main"}
+                    payload = {"title": "Apply automated code improvements", "body": commit_msg, "head": branch_name, "base": base_branch}
                     resp = requests.post(api_url, json=payload, headers=headers)
                     if resp.status_code in (200, 201):
                         pr = resp.json()
@@ -278,5 +339,5 @@ def apply_suggestions_to_branch(suggestions: List[Dict[str, Any]], branch_name: 
             except Exception:
                 pass
 
-    result = {"branch": branch_name, "changed_files": changed, "pr_url": pr_url, "message": "Applied suggestions"}
+    result = {"branch": branch_name, "changed_files": changed, "pr_url": pr_url, "message": "Applied suggestions", "repo_dir": repo_dir}
     return result

@@ -159,6 +159,7 @@ def RegisterRoutes(app: Flask) -> None:
             branch = data.get("branch")
             token = data.get("github_token") or None
             ai_key = data.get("ai_key") or None
+            base_branch = data.get("base_branch") or data.get("target_branch") or "main"
 
             if not target:
                 return jsonify({"error": "invalid_parameter", "message": "Field 'target' is required"}), 400
@@ -166,10 +167,14 @@ def RegisterRoutes(app: Flask) -> None:
             if not isinstance(suggestions, list) or not suggestions:
                 return jsonify({"error": "invalid_parameter", "message": "Field 'suggestions' must be a non-empty list"}), 400
 
-            # Perform apply -> uses local git and may push and create PR
+            # If any suggestion contains an ai_instruction, ensure an ai_key was provided
+            if any(s.get("ai_instruction") for s in suggestions) and not ai_key:
+                return jsonify({"error": "invalid_parameter", "message": "Field 'ai_key' is required when suggestions include 'ai_instruction'"}), 400
+
+            # Perform apply -> will clone target repo if provided, may push and create PR
             from Scanner.Utility.apply_suggestions import apply_suggestions_to_branch
 
-            result = apply_suggestions_to_branch(suggestions, branch_name=branch, github_token=token, ai_key=ai_key, repo_dir=os.getcwd())
+            result = apply_suggestions_to_branch(suggestions, branch_name=branch, github_token=token, ai_key=ai_key, target=target, base_branch=base_branch)
 
             # If validation error occurred while applying AI instructions, return 400 with details
             if isinstance(result, dict) and result.get("message") == "validation_error":
