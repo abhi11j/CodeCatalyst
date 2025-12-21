@@ -121,7 +121,6 @@ def _apply_single_suggestion(suggestion: Dict[str, Any], repo_dir: Optional[str]
 def _apply_ai_instruction(suggestion: Dict[str, Any], repo_dir: Optional[str] = None, ai_key: Optional[str] = None, endpoint: Optional[str] = None, model: Optional[str] = None) -> bool:
     
     repo_dir = repo_dir or os.getcwd()
-    # instruction = suggestion.get("ai_instruction") or suggestion.get("detail")
     instruction = suggestion.get("detail")
     if not instruction:
         return False
@@ -216,7 +215,7 @@ def apply_suggestions_to_branch(suggestions: List[Dict[str, Any]], branch_name: 
     for s in suggestions:
         try:
             # If suggestion contains an AI instruction, use AI to generate file changes
-            if s.get("ai_instruction"):
+            if s.get("source") == "ai":
                 try:
                     if _apply_ai_instruction(s, repo_dir=repo_dir, ai_key=ai_key):
                         changed.append(s.get("title"))

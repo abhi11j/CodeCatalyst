@@ -67,9 +67,9 @@ def RegisterRoutes(app: Flask) -> None:
         {
             "target": "owner/repo",           # Required
             "max_results": 6,                 # Optional, default 6
-            "search_type": false,                  # Optional, default false
-            "openai_key": "sk_...",           # Optional
-            "github_token": "ghp_...",        # Optional
+            "search_type": 1,                 # Optional, default 1
+            "openai_key": "sk_...",           # Optional, default None, Set from env if not provided
+            "github_token": "ghp_...",        # Optional, default None, Set from env if not provided
         }        
         Returns:
             JSON response with suggestions or error
@@ -155,7 +155,6 @@ def RegisterRoutes(app: Flask) -> None:
         try:
             data = request.get_json() or {}
             target = data.get("target")
-            # search_type = data.get("search_type")
             suggestions = data.get("suggestions")
             branch = data.get("branch")
             token = data.get("github_token") or None
@@ -163,14 +162,9 @@ def RegisterRoutes(app: Flask) -> None:
 
             if not target:
                 return jsonify({"error": "invalid_parameter", "message": "Field 'target' is required"}), 400
-            # if search_type != 3:
-            #     return jsonify({"error": "invalid_parameter", "message": "This endpoint requires search_type = 3"}), 400
+           
             if not isinstance(suggestions, list) or not suggestions:
                 return jsonify({"error": "invalid_parameter", "message": "Field 'suggestions' must be a non-empty list"}), 400
-
-            # If any suggestion contains an ai_instruction, ensure an ai_key was provided
-            if any(s.get("ai_instruction") for s in suggestions) and not ai_key:
-                return jsonify({"error": "invalid_parameter", "message": "Field 'ai_key' is required when suggestions include 'ai_instruction'"}), 400
 
             # Perform apply -> uses local git and may push and create PR
             from Scanner.Utility.apply_suggestions import apply_suggestions_to_branch
