@@ -264,7 +264,7 @@ def apply_suggestions_to_branch(suggestions: List[Dict[str, Any]], branch_name: 
     for s in suggestions:
         try:
             # If suggestion contains an AI instruction, use AI to generate file changes
-            if s.get("source") == "ai":
+            if s.get("source") == "AI Cafe":
                 try:
                     if _apply_ai_instruction(s, repo_dir=repo_dir, ai_key=ai_key):
                         changed.append(s.get("title"))
