@@ -216,9 +216,10 @@ def _apply_ai_instruction(suggestion: Dict[str, Any], repo_dir: Optional[str] = 
     # Build a prompt that instructs the AI to return structured JSON
     prompt = (
         "You are a repository automation assistant.\n"
-        "Given the instruction below, return a JSON object with a top-level 'changes' list.\n"
-        "Each change must be an object with 'path', 'action' ('add'|'modify'|'delete'), and 'content' for add/modify.\n"
-        "Do not include any extra text. Only output valid JSON.\n\n"
+        "Given the instruction below, return ONLY a JSON object with a top-level 'changes' list.\n"
+        "Each change must be an object with 'path' (string), 'action' ('add'|'modify'|'delete'), and 'content' (string for add/modify).\n"
+        "Do not include any extra text, explanations, or markdown. Only output valid JSON.\n"
+        "Example: {\"changes\": [{\"path\": \"example.py\", \"action\": \"add\", \"content\": \"print('hello')\"}]}\n\n"
         f"Instruction:\n{instruction}\n\n"
         "Context: The repository root is available to modify files. Use relative paths.\n"
     )
@@ -226,8 +227,19 @@ def _apply_ai_instruction(suggestion: Dict[str, Any], repo_dir: Optional[str] = 
     try:
         client = AIClient(api_key=ai_key, endpoint=endpoint, model=model)
         resp = client.generate(prompt)
-        text = resp.get("text") if isinstance(resp, dict) else str(resp)
+        # Extract the content from the API response
+        text = resp.get("text")
+        if text:
+            try:
+                api_resp = json.loads(text)
+                if "choices" in api_resp and api_resp["choices"]:
+                    text = api_resp["choices"][0]["message"]["content"]
+            except Exception:
+                pass  # Fallback to original text
+        else:
+            text = str(resp)
         logger.info("AI response text (truncated): %s", text[:2000])
+        logger.info("AI response text (Full): %s", text)
 
         # Try to extract JSON from the response text
         parsed = None
