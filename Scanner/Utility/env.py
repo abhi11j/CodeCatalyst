@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 def load_env_file(filepath: str = ".env") -> None:
     try:
         if not os.path.exists(filepath):
-            logger.debug(".env file not found: %s", filepath)
+            logger.info(".env file not found: %s", filepath)
             return
         with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
@@ -27,4 +27,4 @@ def load_env_file(filepath: str = ".env") -> None:
                 if key not in os.environ:
                     os.environ[key] = val
     except Exception as e:
-        logger.debug("Ignoring .env load error: %s", e)
+        logger.info("Ignoring .env load error: %s", e)

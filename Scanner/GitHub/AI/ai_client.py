@@ -51,7 +51,7 @@ class AIClient:
                 response.raise_for_status()
                 return {"text": response.text, "status_code": response.status_code, "source": source}
             except requests.exceptions.RequestException as exc:
-                logger.debug("AI request error: %s", exc)
+                logger.info("AI request error: %s", exc)
                 # small backoff before retry
                 time.sleep(min(2 ** attempt, 30))
                 last_exc = exc
