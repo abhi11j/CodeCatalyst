@@ -47,10 +47,11 @@ class GitHubClient(metaclass=Singleton):
         data = self._handle_response(response)
         return [item["full_name"] for item in data.get("items", [])][:max_results]
 
-    def head_contents(self, repo_full_name: str, path: str) -> bool:
-        url = f"{self.base}/repos/{repo_full_name}/contents/{path}"
+    def file_exists(self, repo_full_name: str, path: str, branch: str) -> bool:
+        url = f"https://api.github.com/repos/{repo_full_name}/contents/{path}?ref={branch}"
         try:
-            response = self.session.head(url)
-            return response.status_code in (200, 302)
+            response = self.session.get(url)
+            return response.status_code == 200
         except requests.exceptions.RequestException:
             return False
+

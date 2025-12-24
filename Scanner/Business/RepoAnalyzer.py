@@ -10,15 +10,23 @@ class RepoAnalyzer:
     @staticmethod
     def analyze_repo(repo_full_name: str, client: GitHubClient) -> RepoFeatures:
         data = client.get_repo(repo_full_name)
-        # data is expected to be the parsed JSON from the GitHub API
+        default_branch = data.get("default_branch", "main")
+
         features = RepoFeatures(
             name=repo_full_name,
             language=data.get("language", "Unknown"),
             stars=data.get("stargazers_count", 0),
             topics=data.get("topics", []),
-            has_dockerfile=client.head_contents(repo_full_name, "Dockerfile"),
-            has_ci=(client.head_contents(repo_full_name, ".github/workflows") or client.head_contents(repo_full_name, ".travis.yml")),
-            has_tests=(client.head_contents(repo_full_name, "tests") or client.head_contents(repo_full_name, "test")),
-            has_readme=client.head_contents(repo_full_name, "README.md")
+            has_dockerfile=client.file_exists(repo_full_name, "Dockerfile", default_branch),
+            has_ci=(
+                client.file_exists(repo_full_name, ".github/workflows", default_branch)
+                or client.file_exists(repo_full_name, ".travis.yml", default_branch)
+            ),
+            has_tests=(
+                client.file_exists(repo_full_name, "tests", default_branch)
+                or client.file_exists(repo_full_name, "test", default_branch)
+            ),
+            has_readme=client.file_exists(repo_full_name, "README.md", default_branch)
         )
         return features
+

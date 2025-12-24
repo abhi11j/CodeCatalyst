@@ -10,10 +10,12 @@ Endpoints:
     GET  /api/health - Health check
 """
 
+from http import client
 import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
+from Scanner.GitHub.GitHubClient import GitHubClient
 from Scanner.Utility.env import load_env_file
 from Scanner.Utility.auth import get_github_token
 from Scanner.Exception.GitHubError import GitHubError
@@ -151,30 +153,50 @@ def RegisterRoutes(app: Flask) -> None:
     """
     @app.route('/api/apply-suggestions', methods=['POST'])
     def ApplySuggestionsEndpoint():
-       
         try:
-            data = request.get_json() or {}
-            target = data.get("target")
-            suggestions = data.get("suggestions")
-            branch = data.get("branch")
-            token = data.get("github_token") or None
-            ai_key = data.get("ai_key") or None
-            base_branch = data.get("base_branch") or data.get("target_branch") or "main"
-
+            payload = request.get_json() or {}
+            target = payload.get("target")
             if not target:
                 return jsonify({"error": "invalid_parameter", "message": "Field 'target' is required"}), 400
-           
+
+            # Use provided token or fallback to configured token
+            token = payload.get("github_token") or get_github_token()
+            client = GitHubClient(token)
+
+            # Fetch repo metadata to obtain default branch
+            try:
+                repo_data = client.get_repo(target)
+            except GitHubError as e:
+                logger.error("Failed to fetch repo metadata for %s: %s", target, str(e))
+                if getattr(e, "status_code", None) == 404:
+                    return jsonify({"error": "not_found", "message": f"Repository not found: {target}"}), 404
+                if getattr(e, "status_code", None) == 401:
+                    return jsonify({"error": "unauthorized", "message": "Invalid GitHub token"}), 401
+                return jsonify({"error": "github_error", "message": str(e)}), getattr(e, "status_code", 500)
+
+            base_branch = repo_data.get("default_branch", "main")
+            suggestions = payload.get("suggestions")
+            branch = payload.get("branch")
+            ai_key = payload.get("ai_key") or None
+
+            logger.info("Apply suggestions for %s base_branch=%s branch=%s", target, base_branch, branch)
+
             if not isinstance(suggestions, list) or not suggestions:
                 return jsonify({"error": "invalid_parameter", "message": "Field 'suggestions' must be a non-empty list"}), 400
 
-            # If any suggestion contains an ai_instruction, ensure an ai_key was provided
             if any(s.get("ai_instruction") for s in suggestions) and not ai_key:
                 return jsonify({"error": "invalid_parameter", "message": "Field 'ai_key' is required when suggestions include 'ai_instruction'"}), 400
 
-            # Perform apply -> will clone target repo if provided, may push and create PR
             from Scanner.Utility.apply_suggestions import apply_suggestions_to_branch
 
-            result = apply_suggestions_to_branch(suggestions, branch_name=branch, github_token=token, ai_key=ai_key, target=target, base_branch=base_branch)
+            result = apply_suggestions_to_branch(
+                suggestions,
+                branch_name=branch,
+                github_token=token,
+                ai_key=ai_key,
+                target=target,
+                base_branch=base_branch
+            )
 
             # If validation error occurred while applying AI instructions, return 400 with details
             if isinstance(result, dict) and result.get("message") == "validation_error":

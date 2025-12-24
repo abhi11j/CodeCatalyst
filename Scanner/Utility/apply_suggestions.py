@@ -71,14 +71,60 @@ def _validate_change_entry(entry: dict, repo_dir: str) -> None:
             logger.error("Content size for '%s' exceeds maximum (%d bytes)", path, MAX_CONTENT_SIZE)
             raise ValueError(f"Change content for '{path}' exceeds maximum allowed size of {MAX_CONTENT_SIZE} bytes")
 
-def _run_git(cmd: List[str], cwd: Optional[str] = None) -> None:
+def _run_git(cmd: List[str], cwd: Optional[str] = None) -> Optional[str]:
     cwd = cwd or os.getcwd()
-    logger.info("Running git command: %s cwd=%s", " ".join(cmd), cwd)
+    logger.debug("Running git command: %s cwd=%s", " ".join(cmd), cwd)
     try:
-        subprocess.check_call(cmd, cwd=cwd)
-    except Exception:
-        logger.exception("Git command failed: %s", cmd)
+        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=True)
+        stdout = (result.stdout or "").strip()
+        if stdout:
+            logger.debug("git stdout: %s", stdout if len(stdout) < 2000 else stdout[:2000] + "...(truncated)")
+        return stdout
+    except subprocess.CalledProcessError as e:
+        stdout = (e.stdout or "").strip()
+        stderr = (e.stderr or "").strip()
+        logger.error("Git command failed: %s", cmd)
+        logger.error("Exit code: %s", getattr(e, "returncode", ""))
+        if stdout:
+            logger.error("git stdout: %s", stdout if len(stdout) < 2000 else stdout[:2000] + "...(truncated)")
+        if stderr:
+            logger.error("git stderr: %s", stderr if len(stderr) < 2000 else stderr[:2000] + "...(truncated)")
         raise
+
+
+def _push_branch(repo_dir: str, branch_name: str, retries: int = 1, delay: float = 1.0) -> None:
+    """Push branch to origin. Try '-u origin <branch>' first, fallback to 'origin HEAD:refs/heads/<branch>'
+    and retry once if transient errors occur.
+    """
+    attempt = 0
+    last_exc = None
+    while attempt <= retries:
+        attempt += 1
+        try:
+            logger.debug("Attempting git push (attempt %d) for branch %s", attempt, branch_name)
+            _run_git(["git", "push", "-u", "origin", branch_name], cwd=repo_dir)
+            logger.info("Successfully pushed branch %s to origin", branch_name)
+            return
+        except subprocess.CalledProcessError as e:
+            last_exc = e
+            logger.warning("Failed to push branch %s with -u origin: %s", branch_name, str(e))
+            # try alternative push form
+            try:
+                logger.debug("Trying alternative push form HEAD:refs/heads/%s", branch_name)
+                _run_git(["git", "push", "origin", f"HEAD:refs/heads/{branch_name}"], cwd=repo_dir)
+                logger.info("Successfully pushed branch %s using HEAD:refs/heads/%s", branch_name, branch_name)
+                return
+            except subprocess.CalledProcessError as e2:
+                last_exc = e2
+                logger.warning("Alternative push also failed for branch %s: %s", branch_name, str(e2))
+
+        if attempt <= retries:
+            logger.info("Retrying push after %.1fs...", delay)
+            time.sleep(delay)
+
+    logger.error("Failed to push branch %s to origin after %d attempts.", branch_name, attempt)
+    logger.error("Possible causes: authentication failure, insufficient permissions, branch protection, or upstream rejects.")
+    raise last_exc
 
 """Apply a single non-AI suggestion using deterministic rules."""
 def _apply_single_suggestion(suggestion: Dict[str, Any], repo_dir: Optional[str] = None) -> bool:   
@@ -360,8 +406,7 @@ def apply_suggestions_to_branch(suggestions: List[Dict[str, Any]], branch_name: 
                 logger.exception("Failed to set remote URL with token; continuing")
                 # Not fatal
                 pass
-        _run_git(["git", "push", "-u", "origin", branch_name], cwd=repo_dir)
-        logger.info("Pushed branch %s to origin", branch_name)
+        _push_branch(repo_dir, branch_name)
     except Exception:
         logger.exception("Failed to push branch %s to origin; branch may be local", branch_name)
         # Non-fatal; branch may be local or push failed
